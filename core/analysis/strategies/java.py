@@ -84,6 +84,8 @@ class JavaFlowStrategy:
             type_str = "INTERFACE"
         elif node.type == "enum_declaration":
              type_str = "ENUM"
+        elif node.type == "record_declaration":
+             type_str = "RECORD"
         
         # Docstring (Javadoc) 추출 - 보통 클래스 선언 직전의 comment
         # tree-sitter에서 comment는 형제 노드로 존재함. (바로 위)
@@ -94,7 +96,24 @@ class JavaFlowStrategy:
         
         # 메서드 추출을 위해 class_body 탐색
         body_node = node.child_by_field_name("body")
+        
+        # Java Record 지원: 헤더의 파라미터를 FIELD로 추출
+        if node.type == "record_declaration":
+            params_node = node.child_by_field_name("parameters")
+            if params_node:
+                for param in params_node.children:
+                    if param.type == "formal_parameter":
+                        p_type_node = param.child_by_field_name("type")
+                        p_name_node = param.child_by_field_name("name")
+                        if p_type_node and p_name_node:
+                            p_type = source_code[p_type_node.start_byte:p_type_node.end_byte].decode("utf-8")
+                            p_name = source_code[p_name_node.start_byte:p_name_node.end_byte].decode("utf-8")
+                            self._create_field_node(full_name, p_name, p_type)
+
         if body_node:
+            # 1. Field Extraction (Normal fields in class body)
+            self._process_fields(body_node, source_code, full_name)
+
             # Class Level Annotation (Base URL)
             base_url = self._extract_base_url(node, source_code)
             self._process_methods(body_node, source_code, full_name, file_path, scan_id, base_url)
@@ -122,6 +141,50 @@ class JavaFlowStrategy:
             "package_name": package_name,
             "type_str": type_str,
             "file_path": file_path
+        })
+
+    def _process_fields(self, class_body_node, source_code: bytes, class_full_name: str):
+        """[필드 추출] 클래스 내 선언된 필드들을 추출하여 DB에 저장합니다."""
+        for child in class_body_node.children:
+            if child.type == "field_declaration":
+                # field_declaration -> type: type, declarator: variable_declarator
+                type_node = child.child_by_field_name("type")
+                if not type_node:
+                    continue
+                
+                type_name = source_code[type_node.start_byte:type_node.end_byte].decode("utf-8")
+                
+                # Multiple declarators (e.g., int a, b;)
+                for grandchild in child.children:
+                    if grandchild.type == "variable_declarator":
+                        name_node = grandchild.child_by_field_name("name")
+                        if name_node:
+                            field_name = source_code[name_node.start_byte:name_node.end_byte].decode("utf-8")
+                            self._create_field_node(class_full_name, field_name, type_name)
+
+    def _create_field_node(self, class_full_name, field_name, field_type):
+        query = """
+        MERGE (c:TYPE {fullName: $class_full_name})
+        MERGE (f:FIELD {name: $field_name, classFullName: $class_full_name})
+        SET f.type = $field_type
+        MERGE (c)-[:HAS_FIELD]->(f)
+        
+        WITH f
+        // DTO 연결을 위한 OF_TYPE (이름 휴리스틱)
+        OPTIONAL MATCH (t:TYPE) 
+        WHERE t.name = $field_type_simple OR t.fullName ENDS WITH "." + $field_type_simple
+        FOREACH (dummy IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (f)-[:OF_TYPE]->(t)
+        )
+        """
+        # List<User> -> User 추출
+        field_type_simple = self.generic_pattern.sub("", field_type).split(".")[-1]
+        
+        self.connector.execute_query(query, {
+            "class_full_name": class_full_name,
+            "field_name": field_name,
+            "field_type": field_type,
+            "field_type_simple": field_type_simple
         })
 
     def _process_methods(self, class_body_node, source_code: bytes, class_full_name: str, file_path: str, scan_id: str, base_url: str):
@@ -185,7 +248,7 @@ class JavaFlowStrategy:
 
         method_name = source_code[name_node.start_byte:name_node.end_byte].decode("utf-8")
         
-        # 파라미터 리스트 추출 (Signature 생성을 위해)
+        # 파라미터 리스트 추출 (Signature 생성을 위해 및 PARAMETER 노드 생성)
         params_node = method_node.child_by_field_name("parameters")
         param_list = []
         if params_node:
@@ -196,13 +259,26 @@ class JavaFlowStrategy:
                     p_name_node = param.child_by_field_name("name")
                     if p_type_node and p_name_node:
                         p_type = source_code[p_type_node.start_byte:p_type_node.end_byte].decode("utf-8")
+                        p_name = source_code[p_name_node.start_byte:p_name_node.end_byte].decode("utf-8")
+                        
                         # 제네릭 제거 (List<String> -> List) - 단순화
                         p_type_simple = self.generic_pattern.sub("", p_type)
                         param_list.append(p_type_simple)
+                        
+                        # 파라미터 노드 및 관계 생성 로직 예약 (signature 확정 후 실행)
         
         # Signature: com.example.MyClass.myMethod(String,int)
         signature = f"{class_full_name}.{method_name}({','.join(param_list)})"
-        
+
+        # 리턴 타입 추출
+        return_type = "void"
+        if method_node.type == "method_declaration":
+             ret_node = method_node.child_by_field_name("dimensions") # tree-sitter-java quirks
+             # Actually "type" is the field name for return type
+             ret_type_node = method_node.child_by_field_name("type")
+             if ret_type_node:
+                 return_type = source_code[ret_type_node.start_byte:ret_type_node.end_byte].decode("utf-8")
+
         # Source Code (Body 전체)
         # method_declaration 전체 텍스트
         full_source = source_code[method_node.start_byte:method_node.end_byte].decode("utf-8")
@@ -253,8 +329,19 @@ class JavaFlowStrategy:
                         http_method = "ALL" # or unknown
                         endpoint = self._combine_url(base_url, extracted_path)
 
-        # DB 저장 (Updated Logic)
-        self._create_method_node(signature, method_name, full_source, class_full_name, ",".join(param_list), method_hash, scan_id, endpoint, http_method)
+        # 1. DB 저장 (METHOD 노드 먼저 생성하여 PARAMETER에서 MATCH 가능하게 함)
+        self._create_method_node(signature, method_name, full_source, class_full_name, ",".join(param_list), method_hash, scan_id, endpoint, http_method, return_type)
+
+        # 2. PARAMETER 노드 생성 (Signature 확정 후)
+        if params_node:
+             for param in params_node.children:
+                if param.type == "formal_parameter":
+                    p_type_node = param.child_by_field_name("type")
+                    p_name_node = param.child_by_field_name("name")
+                    if p_type_node and p_name_node:
+                        p_type = source_code[p_type_node.start_byte:p_type_node.end_byte].decode("utf-8")
+                        p_name = source_code[p_name_node.start_byte:p_name_node.end_byte].decode("utf-8")
+                        self._create_parameter_node(signature, p_name, p_type)
         
         # Call 관계 추출 및 저장 (1단계: 텍스트 기반 호출 추출)
         # 메서드 바디(Body) 내부 탐색
@@ -274,7 +361,7 @@ class JavaFlowStrategy:
         return f"{base}/{path}"
 
 
-    def _create_method_node(self, signature, name, source, class_full_name, args, method_hash, scan_id, endpoint, http_method):
+    def _create_method_node(self, signature, name, source, class_full_name, args, method_hash, scan_id, endpoint, http_method, return_type):
         """
         [메서드 노드 생성 및 연결]
         추출된 메서드 정보를 그래프 DB에 'METHOD' 노드로 생성(MERGE)합니다.
@@ -304,12 +391,23 @@ class JavaFlowStrategy:
         m.hash = $method_hash,
         m.last_scan_id = $scan_id,
         m.endpoint = $endpoint,
-        m.http_method = $http_method
+        m.http_method = $http_method,
+        m.returnType = $return_type
         
         WITH m
         MATCH (c:TYPE {fullName: $class_full_name})
         MERGE (c)-[:CONTAINS]->(m)
+        
+        WITH m
+        // 리턴 타입에 대한 TYPE 연결 (RETURNS 관계)
+        OPTIONAL MATCH (rt:TYPE) 
+        WHERE rt.name = $return_type_simple OR rt.fullName ENDS WITH "." + $return_type_simple
+        FOREACH (dummy IN CASE WHEN rt IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (m)-[:RETURNS]->(rt)
+        )
         """
+        return_type_simple = self.generic_pattern.sub("", return_type).split(".")[-1]
+
         self.connector.execute_query(query, {
             "signature": signature,
             "name": name,
@@ -319,7 +417,33 @@ class JavaFlowStrategy:
             "method_hash": method_hash,
             "scan_id": scan_id,
             "endpoint": endpoint,
-            "http_method": http_method
+            "http_method": http_method,
+            "return_type": return_type,
+            "return_type_simple": return_type_simple
+        })
+
+    def _create_parameter_node(self, method_signature, param_name, param_type):
+        query = """
+        MATCH (m:METHOD {signature: $method_signature})
+        MERGE (p:PARAMETER {name: $param_name, methodSignature: $method_signature})
+        SET p.type = $param_type
+        MERGE (m)-[:HAS_PARAMETER]->(p)
+        
+        WITH p
+        // DTO 연결을 위한 OF_TYPE
+        OPTIONAL MATCH (t:TYPE) 
+        WHERE t.name = $param_type_simple OR t.fullName ENDS WITH "." + $param_type_simple
+        FOREACH (dummy IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (p)-[:OF_TYPE]->(t)
+        )
+        """
+        param_type_simple = self.generic_pattern.sub("", param_type).split(".")[-1]
+        
+        self.connector.execute_query(query, {
+            "method_signature": method_signature,
+            "param_name": param_name,
+            "param_type": param_type,
+            "param_type_simple": param_type_simple
         })
 
     def _extract_method_calls(self, node, source_code: bytes, caller_signature: str, calls: dict):

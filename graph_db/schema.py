@@ -31,6 +31,16 @@ NODE_SCHEMA = {
     ],
     "ExternalCall": [
         "name"
+    ],
+    "PARAMETER": [
+        "name",
+        "type",
+        "methodSignature"
+    ],
+    "FIELD": [
+        "name",
+        "type",
+        "classFullName"
     ]
 }
 
@@ -38,8 +48,11 @@ RELATIONSHIP_SCHEMA = [
     # Format: StartLabel -> RelationshipType -> EndLabel
     "FILE -> CONTAINS -> TYPE",
     "TYPE -> CONTAINS -> METHOD",
+    "TYPE -> HAS_FIELD -> FIELD",
     "METHOD -> CALLS -> ExternalCall",
-    "METHOD -> CALLS -> METHOD"
+    "METHOD -> CALLS -> METHOD",
+    "METHOD -> HAS_PARAMETER -> PARAMETER",
+    "PARAMETER -> OF_TYPE -> TYPE"
 ]
 
 class NodeLabel:
@@ -48,8 +61,14 @@ class NodeLabel:
     TYPE = "TYPE"
     METHOD = "METHOD"
     EXTERNAL_CALL = "ExternalCall"
+    PARAMETER = "PARAMETER"
+    FIELD = "FIELD"
 
 class EdgeType:
     """Dynamic Enum-like access for Edge Types"""
     CONTAINS = "CONTAINS"
     CALLS = "CALLS"
+    HAS_PARAMETER = "HAS_PARAMETER"
+    HAS_FIELD = "HAS_FIELD"
+    OF_TYPE = "OF_TYPE"
+    RETURNS = "RETURNS"

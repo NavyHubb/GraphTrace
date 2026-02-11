@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import uploads, projects, graph
+from api.routes import uploads, projects, graph, agent
 from core.analysis.analyzer import Analyzer
 from infra.db_client import DBClient
 import logging
@@ -41,6 +41,7 @@ app.add_middleware(
 app.include_router(uploads.router)
 app.include_router(projects.router)
 app.include_router(graph.router)
+app.include_router(agent.router)
 
 @app.get("/")
 async def root():

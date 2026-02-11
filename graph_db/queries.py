@@ -70,6 +70,16 @@ class CypherQueries:
     LIMIT 100
     """
 
+    # [엔드포인트까지의 최단 영향 경로 조회]
+    # 특정 메서드($method_id)에서 이를 호출하는 상위 엔드포인트(endpoint IS NOT NULL)까지의 최단 경로를 탐색합니다.
+    # 자연어 테스트 시나리오 생성을 위한 핵심 컨텍스트(진입점 정보)를 확보하는 데 사용됩니다.
+    GET_PATHS_TO_ENDPOINTS = """
+    MATCH (target:METHOD) WHERE elementId(target) = $method_id OR target.id = $method_id
+    MATCH (source:METHOD) WHERE source.endpoint IS NOT NULL
+    MATCH path = shortestPath((source)-[:CALLS*0..]->(target))
+    RETURN path, source.endpoint as endpoint, source.http_method as http_method, source.name as endpoint_method_name
+    """
+
     # [하위 호출 흐름 조회]
     # 특정 메서드가 '누구를 호출하는지(Callees)' 추적하여 전체 경로를 가져옵니다. (Downstream Analysis)
     # 핵심 로직: 화살표의 출발지(source)가 '나($method_id)'인 경우를 찾습니다. (Me -> Target)
