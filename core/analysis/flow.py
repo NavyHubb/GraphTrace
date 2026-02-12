@@ -171,63 +171,61 @@ class Builder:
 
     def _resolve_types(self):
         """
-        [타입 연결 확인 (Type Resolution)]
-        파라미터(PARAMETER)와 필드(FIELD)가 선언된 타입 이름(String)을 기준으로
-        실제 프로젝트 내의 클래스(TYPE) 노드를 찾아 'OF_TYPE' 관계로 연결합니다.
-        분석 순서 문제를 해결하기 위해 전역 단계에서 수행합니다.
+        [전역 타입 해소 (Global Type Resolution)]
+        PARAMETER, FIELD, METHOD 노드의 타입 정보를 프로젝트 내의 TYPE 노드와 연결합니다.
+        제네릭(예: ResponseEntity<DTO>, List<DTO>)에 감싸진 형태도 처리할 수 있도록
+        패턴 매칭을 강화했습니다.
         """
-        # 1. Parameter -> TYPE
+        # 1. Parameter -> OF_TYPE -> TYPE
         query_param = """
         MATCH (p:PARAMETER)
         WHERE NOT (p)-[:OF_TYPE]->()
-        
         MATCH (t:TYPE)
-        // generics 제거 후 비교 (단순화)
-        WITH p, t, 
-             apoc.text.replace(p.type, '<.*>', '') as p_base_type
-        WHERE t.name = p_base_type 
-           OR t.fullName ENDS WITH "." + p_base_type
-        
+        WHERE p.type = t.name 
+           OR p.type =~ ('.*[<, ]' + t.name + '([>].*|$)')
+           OR (t.fullName IS NOT NULL AND p.type ENDS WITH "." + t.name)
         MERGE (p)-[:OF_TYPE]->(t)
         """
         
-        # 2. Field -> TYPE
+        # 2. Field -> OF_TYPE -> TYPE
         query_field = """
         MATCH (f:FIELD)
         WHERE NOT (f)-[:OF_TYPE]->()
-        
         MATCH (t:TYPE)
-        WITH f, t, 
-             apoc.text.replace(f.type, '<.*>', '') as f_base_type
-        WHERE t.name = f_base_type 
-           OR t.fullName ENDS WITH "." + f_base_type
-        
-        MERGE (f)-[:OF_TYPE]->(t)
-        """
-        # Note: apoc가 설치되어 있지 않을 경우를 대비해 간단한 replace(p.type, '...', '')를 쓰거나 
-        # Python에서 처리할 수도 있으나, 여기서는 DB 성능을 위해 Cypher로 시도.
-        # 만약 에러 발생 시 fallback 로직 필요.
-        
-        # Generic 제거 정규표현식 없이 간단한 매칭 (Fallback)
-        query_param_fallback = """
-        MATCH (p:PARAMETER)
-        WHERE NOT (p)-[:OF_TYPE]->()
-        MATCH (t:TYPE)
-        WHERE t.name = p.type OR t.fullName ENDS WITH "." + p.type
-        MERGE (p)-[:OF_TYPE]->(t)
-        """
-        
-        query_field_fallback = """
-        MATCH (f:FIELD)
-        WHERE NOT (f)-[:OF_TYPE]->()
-        MATCH (t:TYPE)
-        WHERE t.name = f.type OR t.fullName ENDS WITH "." + f.type
+        WHERE f.type = t.name 
+           OR f.type =~ ('.*[<, ]' + t.name + '([>].*|$)')
+           OR (t.fullName IS NOT NULL AND f.type ENDS WITH "." + t.name)
         MERGE (f)-[:OF_TYPE]->(t)
         """
 
+        # 3. Method -> RETURNS -> TYPE (Direct Legacy Link)
+        query_returns = """
+        MATCH (m:METHOD)
+        WHERE m.returnType IS NOT NULL AND m.returnType <> 'void' 
+          AND NOT (m)-[:RETURNS]->()
+        MATCH (t:TYPE)
+        WHERE m.returnType = t.name 
+           OR m.returnType =~ ('.*[<, ]' + t.name + '([>].*|$)')
+           OR (t.fullName IS NOT NULL AND m.returnType ENDS WITH "." + t.name)
+        MERGE (m)-[:RETURNS]->(t)
+        """
+
+        # 4. RETURN_VALUE -> OF_TYPE -> TYPE (New Structured Link)
+        query_return_val = """
+        MATCH (rv:RETURN_VALUE)
+        WHERE NOT (rv)-[:OF_TYPE]->()
+        MATCH (t:TYPE)
+        WHERE rv.type = t.name 
+           OR rv.type =~ ('.*[<, ]' + t.name + '([>].*|$)')
+           OR (t.fullName IS NOT NULL AND rv.type ENDS WITH "." + t.name)
+        MERGE (rv)-[:OF_TYPE]->(t)
+        """
+
         try:
-            # 1단계: 정확한 매칭 시도
-            self.connector.execute_query(query_param_fallback)
-            self.connector.execute_query(query_field_fallback)
+            self.connector.execute_query(query_param)
+            self.connector.execute_query(query_field)
+            self.connector.execute_query(query_returns)
+            self.connector.execute_query(query_return_val)
+            logger.info("Global types (including generics) resolved.")
         except Exception as e:
             logger.error(f"Type Resolution Error: {e}")

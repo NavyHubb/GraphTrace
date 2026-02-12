@@ -332,7 +332,11 @@ class JavaFlowStrategy:
         # 1. DB 저장 (METHOD 노드 먼저 생성하여 PARAMETER에서 MATCH 가능하게 함)
         self._create_method_node(signature, method_name, full_source, class_full_name, ",".join(param_list), method_hash, scan_id, endpoint, http_method, return_type)
 
-        # 2. PARAMETER 노드 생성 (Signature 확정 후)
+        # 2. RETURN_VALUE 노드 생성 (정확한 리턴 타입 구조 보존용)
+        if return_type and return_type != "void":
+            self._create_return_value_node(signature, return_type)
+
+        # 3. PARAMETER 노드 생성 (Signature 확정 후)
         if params_node:
              for param in params_node.children:
                 if param.type == "formal_parameter":
@@ -420,6 +424,18 @@ class JavaFlowStrategy:
             "http_method": http_method,
             "return_type": return_type,
             "return_type_simple": return_type_simple
+        })
+
+    def _create_return_value_node(self, method_signature, return_type):
+        query = """
+        MATCH (m:METHOD {signature: $method_signature})
+        MERGE (r:RETURN_VALUE {methodSignature: $method_signature})
+        SET r.type = $return_type
+        MERGE (m)-[:HAS_RETURN]->(r)
+        """
+        self.connector.execute_query(query, {
+            "method_signature": method_signature,
+            "return_type": return_type
         })
 
     def _create_parameter_node(self, method_signature, param_name, param_type):
