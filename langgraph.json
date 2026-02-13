@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "integration_agent": "./core/agent/entrypoints.py:integration_graph"
+  },
+  "env": ".env.dev"
+}

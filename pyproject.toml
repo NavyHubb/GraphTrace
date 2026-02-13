@@ -17,3 +17,8 @@ dependencies = [
     "tree-sitter<0.22.0",
     "uvicorn>=0.40.0",
 ]
+
+[dependency-groups]
+dev = [
+    "langgraph-cli[inmem]>=0.4.12",
+]

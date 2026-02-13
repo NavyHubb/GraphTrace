@@ -65,3 +65,6 @@ frontend/yarn-error.log*
 
 # Tests
 tests/
+
+# LangGraph
+.langgraph_api/
