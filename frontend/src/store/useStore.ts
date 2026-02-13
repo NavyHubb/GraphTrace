@@ -16,6 +16,18 @@ interface GraphData {
     edges: Edge[];
 }
 
+interface IntegrationScenario {
+    endpoint: string;
+    http_method: string;
+    trigger_methods: string[];
+    result: {
+        scenario: string;
+        expected_result: string;
+        request_payload: any;
+        response_payload: any;
+    };
+}
+
 interface AppState {
     // Data
     projectNodes: MethodNode[];
@@ -25,6 +37,10 @@ interface AppState {
     isLoading: boolean;
     error: string | null;
 
+    // Agent State
+    integrationScenarios: IntegrationScenario[];
+    isAgentRunning: boolean;
+
     // Actions
     fetchProjectNodes: (projectId?: string) => Promise<void>;
     fetchUpstreamGraph: (nodeId: string) => Promise<void>;
@@ -32,6 +48,11 @@ interface AppState {
     fetchNodeDetail: (nodeId: string) => Promise<void>;
     uploadFiles: (files: File[]) => Promise<void>;
     clearSelection: () => void;
+
+    // Agent Actions
+    generateIntegrationScenario: (methodId: string) => Promise<void>;
+    generateBatchIntegrationScenarios: () => Promise<void>;
+    clearScenarios: () => void;
 
     projects: string[];
     selectedProject: string | null;
@@ -51,6 +72,10 @@ export const useStore = create<AppState>((set, get) => ({
     selectedNodeDetail: null,
     isLoading: false,
     error: null,
+
+    // Agent State
+    integrationScenarios: [],
+    isAgentRunning: false,
 
     // Project Management
     projects: [],
@@ -142,6 +167,37 @@ export const useStore = create<AppState>((set, get) => ({
             console.error(err);
         }
     },
+
+    // Agent Actions
+    generateIntegrationScenario: async (methodId) => {
+        set({ isAgentRunning: true, error: null, integrationScenarios: [] });
+        try {
+            const res = await fetch(`${API_BASE}/agent/integration-scenario/${methodId}`);
+            if (!res.ok) throw new Error('Failed to generate integration scenario');
+            const data = await res.json();
+            set({ integrationScenarios: data.scenarios });
+        } catch (err: any) {
+            set({ error: err.message });
+        } finally {
+            set({ isAgentRunning: false });
+        }
+    },
+
+    generateBatchIntegrationScenarios: async () => {
+        set({ isAgentRunning: true, error: null, integrationScenarios: [] });
+        try {
+            const res = await fetch(`${API_BASE}/agent/integration-scenario/batch/all`);
+            if (!res.ok) throw new Error('Failed to generate batch scenarios');
+            const data = await res.json();
+            set({ integrationScenarios: data.scenarios });
+        } catch (err: any) {
+            set({ error: err.message });
+        } finally {
+            set({ isAgentRunning: false });
+        }
+    },
+
+    clearScenarios: () => set({ integrationScenarios: [] }),
 
     uploadFiles: async (files) => {
         set({ isLoading: true, error: null, uploadSuccess: false });
