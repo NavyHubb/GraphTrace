@@ -18,10 +18,13 @@ class IntegrationState(TypedDict):
     # 변경된 메서드들의 목록 (ID 또는 Signature)
     source_method_ids: List[str]
     # 엔드포인트별로 그룹화된 영향 경로 및 원인 메서드들
-    # { endpoint_url: { "paths": [...], "source_methods": [...] } }
     impact_groups: Dict[str, Any]
     contexts: Dict[str, Any]
-    scenarios: Annotated[List[Dict[str, Any]], add]
+    scenarios: List[Dict[str, Any]]
+    # 루프 제어를 위한 필드
+    iterations: int
+    max_iterations: int
+    validation_results: List[Dict[str, Any]]
     errors: List[str]
     next_step: str
 
@@ -32,12 +35,19 @@ class ScenarioOutput(BaseModel):
     request_payload: str = Field(description="샘플 Request JSON 페이로드를 문자열 형태로 제공")
     response_payload: str = Field(description="샘플 Response JSON 페이로드를 문자열 형태로 제공")
 
+class ValidatorOutput(BaseModel):
+    """Validator 노드의 검증 결과 구조입니다."""
+    is_valid: bool = Field(description="시나리오가 모든 검증 기준을 충족하는지 여부")
+    feedback: str = Field(description="결함이 발견된 경우 구체적인 수정 지침 (없으면 빈 문자열)")
+    endpoint: str = Field(description="검증 대상 엔드포인트")
+
 class IntegrationAgent:
     def __init__(self, db_client: DBClient):
         self.db_client = db_client
         self.llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
         # strict=False를 명시적으로 주거나, payload를 string으로 받아서 파싱하는 전략 사용
         self.structured_llm = self.llm.with_structured_output(ScenarioOutput)
+        self.validator_llm = self.llm.with_structured_output(ValidatorOutput)
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -144,9 +154,21 @@ class IntegrationAgent:
             # 원인 메서드 이름들을 가져와서 프롬프트에 포함 (추적성 확보)
             trigger_names = [m.split('.')[-1] for m in context['trigger_methods']] # 간단히 클래스명 제외 이름만
             
+            # 이전 피드백이 있는 경우 프롬프트에 추가
+            feedback_str = ""
+            if state.get("validation_results"):
+                endpoint_feedback = [vr for vr in state["validation_results"] if vr.get("endpoint") == endpoint]
+                if endpoint_feedback:
+                    feedback_str = f"""
+### ⚠️ 이전 검증 피드백 (반드시 반영 필요)
+다음은 이전 시도에서 발견된 결함들입니다. 이번 생성 시에는 아래 피드백을 최우선으로 반영하여 결함을 보정해 주세요:
+{endpoint_feedback[-1]['feedback']}
+"""
+
             prompt = f"""
 전략적인 통합 테스트 시나리오를 한국어로 생성해 주세요.
 이 테스트는 특히 다음 변경된 메서드들의 영향도를 검증해야 합니다: {', '.join(trigger_names)}
+{feedback_str}
 
 [대상 엔드포인트]
 - URL: {endpoint}
@@ -218,7 +240,119 @@ class IntegrationAgent:
                 errors.append(f"{endpoint}: {str(e)}")
                 
         # 에러가 있으면 상태에 병합 (기존 errors 리스트에 추가됨)
-        return {"scenarios": scenarios, "errors": errors}
+        # 생성할 때마다 iteration 증가 (_build_graph에서 처리해도 되지만 여기서 명시적으로 기록할 수도 있음)
+        return {"scenarios": scenarios, "errors": errors, "iterations": state["iterations"] + 1}
+
+    def validator_node(self, state: IntegrationState):
+        """생성된 시나리오의 논리적 결함 및 JSON 유효성을 검토합니다."""
+        logger.info(f"Validating scenarios (Iteration: {state['iterations']}/ {state['max_iterations']})...")
+        
+        validation_results = []
+        all_valid = True
+        
+        for scenario_data in state["scenarios"]:
+            endpoint = scenario_data["endpoint"]
+            context = state["contexts"].get(endpoint, {})
+            trigger_names = [m.split('.')[-1] for m in context.get('trigger_methods', [])]
+            
+            prompt = f"""
+다음 생성된 테스트 시나리오를 검토하고 피드백을 주세요.
+
+[대상 엔드포인트]
+- {endpoint} ({scenario_data['http_method']})
+
+[코드 문맥]
+{json.dumps(context.get('methods', []), indent=2, ensure_ascii=False)}
+
+[DTO 구조]
+{json.dumps(context.get('dtos', {}), indent=2, ensure_ascii=False)}
+
+[변경된 메서드]
+{', '.join(trigger_names)}
+
+[검토 대상 시나리오]
+{json.dumps(scenario_data['result'], indent=2, ensure_ascii=False)}
+
+[검증 기준]
+1. JSON 유효성: payload가 유효한 JSON이며 DTO 구조를 반영하는가?
+2. 논리적 일관성: 시나리오가 비즈니스 로직 및 HTTP 메서드에 부합하는가?
+3. 추적성: 변경된 메서드({', '.join(trigger_names)})의 영향도가 잘 설명되었는가?
+4. 형식 준수: 마크다운 서식 및 표 형식을 엄격히 따르는가?
+
+결함이 있다면 구체적인 수정 지침을 `feedback`에 작성하고 `is_valid`를 false로 설정하세요. 모든 기준을 통과하면 `is_valid`를 true로 설정하세요.
+"""
+            try:
+                validation = self.validator_llm.invoke(prompt)
+                validation_results.append({
+                    "endpoint": endpoint,
+                    "is_valid": validation.is_valid,
+                    "feedback": validation.feedback
+                })
+                if not validation.is_valid:
+                    all_valid = False
+            except Exception as e:
+                logger.error(f"Validation failed for {endpoint}: {e}")
+                validation_results.append({
+                    "endpoint": endpoint,
+                    "is_valid": False,
+                    "feedback": f"Validation process error: {str(e)}"
+                })
+                all_valid = False
+        
+        # 모든 시나리오가 유효하거나 최대 반복 횟수에 도달하면 종료로 보냄
+        next_step = "generator"
+        if all_valid or state["iterations"] >= state["max_iterations"]:
+            next_step = END
+            
+        return {"validation_results": validation_results, "next_step": next_step}
+
+    def _should_continue(self, state: IntegrationState):
+        """루프를 계속할지 결정하는 조건부 로직입니다."""
+        if state["next_step"] == END:
+            return END
+        return "generator"
+
+    def _build_graph(self):
+        workflow = StateGraph(IntegrationState)
+
+        # 노드 추가
+        workflow.add_node("planner", self.planner_node)
+        workflow.add_node("retriever", self.retriever_node)
+        workflow.add_node("generator", self.generator_node)
+        workflow.add_node("validator", self.validator_node)
+
+        # 엣지 정의 (흐름)
+        workflow.set_entry_point("planner")
+        workflow.add_edge("planner", "retriever")
+        workflow.add_edge("retriever", "generator")
+        workflow.add_edge("generator", "validator")
+        
+        # 조건부 엣지
+        workflow.add_conditional_edges(
+            "validator",
+            self._should_continue,
+            {
+                "generator": "generator",
+                END: END
+            }
+        )
+
+        return workflow.compile()
+
+    def run(self, source_method_ids: List[str], max_iterations: int = 3):
+        """그래프를 실행합니다."""
+        initial_state = {
+            "source_method_ids": source_method_ids,
+            "impact_groups": {},
+            "contexts": {},
+            "scenarios": [],
+            "iterations": 0,
+            "max_iterations": max_iterations,
+            "validation_results": [],
+            "errors": [],
+            "next_step": ""
+        }
+        return self.graph.invoke(initial_state)
 
     def _collect_dto_info(self, method_signature, dtos_context):
         """기존 ScenarioAgent의 로직을 재사용하거나 확장합니다."""
@@ -240,15 +374,3 @@ class IntegrationAgent:
                     "name": row["field_name"],
                     "type": row["field_type"]
                 })
-
-    def run(self, source_method_ids: List[str]):
-        """그래프를 실행합니다."""
-        initial_state = {
-            "source_method_ids": source_method_ids,
-            "impact_groups": {},
-            "contexts": {},
-            "scenarios": [],
-            "errors": [],
-            "next_step": ""
-        }
-        return self.graph.invoke(initial_state)
