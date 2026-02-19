@@ -4,6 +4,7 @@ import hashlib
 import tree_sitter
 import re
 import os
+import textwrap
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +281,17 @@ class JavaFlowStrategy:
 
         # Source Code (Body 전체)
         # method_declaration 전체 텍스트
-        full_source = source_code[method_node.start_byte:method_node.end_byte].decode("utf-8")
+        raw_source = source_code[method_node.start_byte:method_node.end_byte].decode("utf-8")
+        
+        # 들여쓰기 보정: 첫 줄의 시작 컬럼 정보를 활용하여 정규화(Dedent)
+        source_lines = raw_source.splitlines()
+        if source_lines:
+            # tree-sitter의 start_point[1]은 시작 컬럼(0-indexed)
+            start_column = method_node.start_point[1]
+            source_lines[0] = " " * start_column + source_lines[0]
+            full_source = textwrap.dedent("\n".join(source_lines))
+        else:
+            full_source = raw_source
         
         # DB 저장
         # Hashing for Smart Update
