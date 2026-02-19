@@ -28,12 +28,20 @@ class IntegrationState(TypedDict):
     errors: List[str]
     next_step: str
 
+class RequestDetail(BaseModel):
+    payload: str = Field(description="샘플 Request JSON 페이로드 (문자열)")
+    headers: str = Field(description="샘플 Request HTTP 헤더 (문자열, 예: Authorization: ...)")
+
+class ResponseDetail(BaseModel):
+    payload: str = Field(description="샘플 Response JSON 페이로드 (문자열)")
+    headers: str = Field(description="샘플 Response HTTP 헤더 (문자열, 예: token: ...)")
+
 class ScenarioOutput(BaseModel):
     """LLM이 생성할 시나리오의 구조입니다."""
     scenario: str = Field(description="테스트 시나리오 설명")
     expected_result: str = Field(description="기대 결과")
-    request_payload: str = Field(description="샘플 Request JSON 페이로드를 문자열 형태로 제공")
-    response_payload: str = Field(description="샘플 Response JSON 페이로드를 문자열 형태로 제공")
+    request: RequestDetail
+    response: ResponseDetail
 
 class ValidatorOutput(BaseModel):
     """Validator 노드의 검증 결과 구조입니다."""
@@ -121,11 +129,36 @@ class IntegrationAgent:
         
         for endpoint, group in state["impact_groups"].items():
             methods_context = []
-            dtos_context = {}
+            all_dtos = {}
             processed_signatures = set()
             
-            # 모든 경로상의 노드 정보 수집
+            # 엔드포인트 메서드 정보 식별
+            public_dto_names = set()
+            
             for path in group["paths"]:
+                source_node = path.nodes[0]
+                if "METHOD" in source_node.labels and source_node.get("signature") not in processed_signatures:
+                    # 응답 DTO 추출 (ResponseEntity<T> 대응)
+                    ret_type = source_node.get("returnType")
+                    if ret_type and "ResponseEntity<" in ret_type:
+                        try:
+                            # ResponseEntity<LoginResDto> -> LoginResDto
+                            actual_dto = ret_type.split('<')[1].split('>')[0]
+                            public_dto_names.add(actual_dto)
+                        except:
+                            public_dto_names.add(ret_type)
+                    elif ret_type and ret_type != "void":
+                        public_dto_names.add(ret_type)
+                    
+                    # 요청 DTO 추출
+                    param_query = """
+                    MATCH (m:METHOD {signature: $signature})-[:HAS_PARAMETER]->(p:PARAMETER)-[:OF_TYPE]->(t:TYPE)
+                    RETURN t.fullName as type_name LIMIT 1
+                    """
+                    param_res = self.db_client.execute_query(param_query, {"signature": source_node.get("signature")})
+                    if param_res:
+                        public_dto_names.add(param_res[0]["type_name"])
+                
                 for node in path.nodes:
                     if "METHOD" in node.labels:
                         sig = node.get("signature")
@@ -137,12 +170,25 @@ class IntegrationAgent:
                                 "returnType": node.get("returnType")
                             })
                             processed_signatures.add(sig)
-                            self._collect_dto_info(sig, dtos_context)
+                            self._collect_dto_info(sig, all_dtos)
             
+            # DTO 분류 (Public vs Internal)
+            public_dtos = {}
+            internal_dtos = {}
+            for t_name, fields in all_dtos.items():
+                # 간단한 이름 매칭 (fullName 혹은 simpleName)
+                is_public = any(p in t_name for p in public_dto_names)
+                if is_public:
+                    public_dtos[t_name] = fields
+                else:
+                    internal_dtos[t_name] = fields
+
             contexts[endpoint] = {
                 "methods": methods_context,
-                "dtos": dtos_context,
-                "trigger_methods": group["source_methods"]
+                "public_dtos": public_dtos,
+                "internal_dtos": internal_dtos,
+                "trigger_methods": group["source_methods"],
+                "public_dto_names": list(public_dto_names)
             }
             
         return {"contexts": contexts, "next_step": "generator"}
@@ -187,8 +233,16 @@ class IntegrationAgent:
 [비즈니스 로직 문맥 (영향 경로상의 코드)]
 {json.dumps(context['methods'], indent=2, ensure_ascii=False)}
 
-[DTO 데이터 구조]
-{json.dumps(context['dtos'], indent=2, ensure_ascii=False)}
+[Public API DTO 구조 (필수 준수)]
+{json.dumps(context['public_dtos'], indent=2, ensure_ascii=False)}
+
+[Internal Data structures (참고용 컨텍스트)]
+{json.dumps(context['internal_dtos'], indent=2, ensure_ascii=False)}
+
+[DTO 매핑 지침]
+- **Request Payload**: `{', '.join(context['public_dto_names']) if context['public_dto_names'] else 'N/A'}` 구조 중 요청에 해당하는 것을 엄격히 따라야 합니다.
+- **Response Payload**: `{', '.join(context['public_dto_names']) if context['public_dto_names'] else 'N/A'}` 구조 중 응답에 해당하는 것을 엄격히 따라야 합니다.
+- **중요**: 최종 응답 바디에는 [Public API DTO] 구조만 사용하고, [Internal Data structures]에 있는 필드(예: token 등)를 바디에 섞지 마세요.
 
 [추가 요구사항]
 1. 모든 설명과 결과는 **한국어**로 작성해 주세요.
@@ -211,8 +265,15 @@ class IntegrationAgent:
    - 이 필드는 반드시 **마크다운 표(Markdown Table)** 형식으로 작성해야 합니다.
    - 표 컬럼 예시: `| 구분 | 상태 코드 | 검증 항목 | 비고 |`
    - 성공 케이스와 다양한 실패 케이스(예외 상황)를 표에 모두 포함해 주세요.
-4. `request_payload` 필드: 엔드포인트로 전송할 샘플 Request JSON을 문자열로 작성해 주세요.
-5. `response_payload` 필드: 성공 케이스에서 반환될 것으로 예상되는 샘플 Response JSON을 문자열로 작성해 주세요.
+4. `request` 객체:
+   - `payload`: 엔드포인트로 전송할 샘플 Request JSON을 문자열로 작성해 주세요. **중요**: `[Public API DTO 구조]`에 정의된 모든 필드를 누락 없이 포함해야 합니다.
+   - `headers`: **제공된 [비즈니스 로직 문맥] 코드에서 명시적으로 확인되는 헤더**만 작성해 주세요 (예: `@RequestHeader`, `HttpServletRequest.getHeader()` 등으로 추출되는 값).
+   - **주의**: 단순 추측으로 `Authorization: Bearer ...`와 같은 인증 헤더를 추가하지 마세요. 특히 로그인(`/login`) 처럼 토큰을 **발급받기 전**인 경우 요청 헤더에 토큰이 있어서는 안 됩니다.
+   - `Content-Type: application/json`과 같이 자명한 표준 헤더는 제외하세요.
+5. `response` 객체:
+   - `payload`: 성공 케이스에서 반환될 것으로 예상되는 샘플 Response JSON을 문자열로 작성해 주세요. **중요**: 해당 응답 DTO에 정의된 모든 필드를 실제 데이터 구조와 동일하게 포함해야 합니다.
+   - `headers`: **[비즈니스 로직 문맥] 코드에서 명시적으로 조작되는 헤더**만 작성해 주세요 (예: `response.setHeader()`, `HttpHeaders.set()` 등). 
+   - **주의**: 바디에 포함된 값을 습관적으로 헤더에 중복 포함하지 마세요.
 """
             try:
                 result = self.structured_llm.invoke(prompt)
@@ -220,18 +281,18 @@ class IntegrationAgent:
                 # Request Payload JSON 파싱 시도
                 request_payload_obj = {}
                 try:
-                    request_payload_obj = json.loads(result.request_payload)
+                    request_payload_obj = json.loads(result.request.payload)
                 except:
                     logger.warning(f"Failed to parse request_payload for {endpoint}, using raw string.")
-                    request_payload_obj = {"raw": result.request_payload}
+                    request_payload_obj = {"raw": result.request.payload}
 
                 # Response Payload JSON 파싱 시도
                 response_payload_obj = {}
                 try:
-                    response_payload_obj = json.loads(result.response_payload)
+                    response_payload_obj = json.loads(result.response.payload)
                 except:
                     logger.warning(f"Failed to parse response_payload for {endpoint}, using raw string.")
-                    response_payload_obj = {"raw": result.response_payload}
+                    response_payload_obj = {"raw": result.response.payload}
 
                 scenarios.append({
                     "endpoint": endpoint,
@@ -240,8 +301,14 @@ class IntegrationAgent:
                     "result": {
                         "scenario": result.scenario,
                         "expected_result": result.expected_result,
-                        "request_payload": request_payload_obj,
-                        "response_payload": response_payload_obj
+                        "request": {
+                            "payload": request_payload_obj,
+                            "headers": result.request.headers
+                        },
+                        "response": {
+                            "payload": response_payload_obj,
+                            "headers": result.response.headers
+                        }
                     }
                 })
             except Exception as e:
@@ -273,8 +340,11 @@ class IntegrationAgent:
 [코드 문맥]
 {json.dumps(context.get('methods', []), indent=2, ensure_ascii=False)}
 
-[DTO 구조]
-{json.dumps(context.get('dtos', {}), indent=2, ensure_ascii=False)}
+[Public API DTO 구조 (바디 검증 기준)]
+{json.dumps(context.get('public_dtos', {}), indent=2, ensure_ascii=False)}
+
+[Internal Data structures (참고용 컨텍스트)]
+{json.dumps(context.get('internal_dtos', {}), indent=2, ensure_ascii=False)}
 
 [변경된 메서드]
 {', '.join(trigger_names)}
@@ -282,13 +352,21 @@ class IntegrationAgent:
 [검토 대상 시나리오]
 {json.dumps(scenario_data['result'], indent=2, ensure_ascii=False)}
 
+[DTO 매핑 정보]
+- 이 엔드포인트의 **공개 API DTO**: `{', '.join(context.get('public_dto_names', []))}`
+- 위 **공개 API DTO** 리스트에 정의된 필드**만** `request.payload`와 `response.payload`에 포함되어야 합니다.
+
 [검증 기준]
-1. JSON 유효성: payload가 유효한 JSON이며 DTO 구조를 반영하는가?
+1. **JSON 및 헤더 정합성 (최우선)**: 
+   - `request.payload`와 `response.payload`가 각각의 **공개 API DTO** 구조 및 필드와 정확히 일치하는가?
+   - **헤더 타당성**: `request.headers`에 포함된 헤더가 **제공된 [코드 문맥]에서 실제로 요구하거나 사용하는지** 확인하세요. 코드에 없는 `Authorization` 등의 헤더를 임의로 생성했다면 이는 결함입니다.
+   - **헤더/바디 분리**: 소스 코드의 `HttpHeaders` 로직에 명시된 데이터가 바디(`payload`)가 아닌 헤더(`headers`)에 정확히 위치했는가?
+   - **Internal DTO 혼입 금지**: `Internal Data structures`에만 정의된 필드가 본문(바디)에 섞여 들어가지 않았는가?
 2. 논리적 일관성: 시나리오가 비즈니스 로직 및 HTTP 메서드에 부합하는가?
 3. 추적성: 변경된 메서드({', '.join(trigger_names)})의 영향도가 잘 설명되었는가?
 4. 형식 준수: 마크다운 서식 및 표 형식을 엄격히 따르는가?
 
-결함이 있다면 구체적인 수정 지침을 `feedback`에 작성하고 `is_valid`를 false로 설정하세요. 모든 기준을 통과하면 `is_valid`를 true로 설정하세요.
+결함이 있다면 **누락된 필드명이나 잘못된 구조를 상세히 기술**하여 `feedback`에 작성하고 `is_valid`를 false로 설정하세요. 모든 필드가 포함되고 기준을 통과하면 `is_valid`를 true로 설정하세요.
 """
             try:
                 validation = self.validator_llm.invoke(prompt)
@@ -364,22 +442,32 @@ class IntegrationAgent:
         return self.graph.invoke(initial_state)
 
     def _collect_dto_info(self, method_signature, dtos_context):
-        """기존 ScenarioAgent의 로직을 재사용하거나 확장합니다."""
+        """메서드의 파라미터 및 리턴 타입과 연관된 DTO 필드 정보를 수집합니다."""
         query = """
-        MATCH (m:METHOD {signature: $signature})-[:HAS_PARAMETER]->(p:PARAMETER)-[:OF_TYPE]->(t:TYPE)
-        OPTIONAL MATCH (t)-[:HAS_FIELD]->(f:FIELD)
-        RETURN t.fullName as type_name, f.name as field_name, f.type as field_type
+        MATCH (m:METHOD {signature: $signature})
+        OPTIONAL MATCH (m)-[:HAS_PARAMETER]->(p:PARAMETER)-[:OF_TYPE]->(pt:TYPE)
+        OPTIONAL MATCH (pt)-[:HAS_FIELD]->(pf:FIELD)
+        OPTIONAL MATCH (m)-[:RETURNS]->(rt:TYPE)
+        OPTIONAL MATCH (rt)-[:HAS_FIELD]->(rf:FIELD)
+        RETURN 
+            pt.fullName as pt_name, pf.name as pf_name, pf.type as pf_type,
+            rt.fullName as rt_name, rf.name as rf_name, rf.type as rf_type
         """
         results = self.db_client.execute_query(query, {"signature": method_signature})
         
         for row in results:
-            type_name = row["type_name"]
-            if not type_name: continue
-            if type_name not in dtos_context:
-                dtos_context[type_name] = []
+            # 파라미터 DTO 처리
+            if row["pt_name"]:
+                t_name = row["pt_name"]
+                if t_name not in dtos_context:
+                    dtos_context[t_name] = []
+                if row["pf_name"] and not any(f["name"] == row["pf_name"] for f in dtos_context[t_name]):
+                    dtos_context[t_name].append({"name": row["pf_name"], "type": row["pf_type"]})
             
-            if row["field_name"]:
-                dtos_context[type_name].append({
-                    "name": row["field_name"],
-                    "type": row["field_type"]
-                })
+            # 리턴 타입 DTO 처리 (Response)
+            if row["rt_name"]:
+                t_name = row["rt_name"]
+                if t_name not in dtos_context:
+                    dtos_context[t_name] = []
+                if row["rf_name"] and not any(f["name"] == row["rf_name"] for f in dtos_context[t_name]):
+                    dtos_context[t_name].append({"name": row["rf_name"], "type": row["rf_type"]})

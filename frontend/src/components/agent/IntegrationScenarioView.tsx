@@ -107,32 +107,50 @@ export function IntegrationScenarioView() {
                                         
                                         {/* Request */}
                                         <div className="space-y-2">
-                                            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border-l-4 border-blue-500 rounded">
+                                            <div className="flex items-center justify-between px-3 py-1.5 bg-blue-500/10 border-l-4 border-blue-500 rounded">
                                                 <span className="text-sm font-semibold text-blue-600">Request</span>
                                             </div>
+                                            
+                                            {/* Request Headers */}
+                                            {scenario.result.request.headers && (
+                                                <div className="bg-muted/50 p-3 rounded-lg border border-dashed">
+                                                    <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Headers</div>
+                                                    <pre className="text-xs font-mono whitespace-pre-wrap">{scenario.result.request.headers}</pre>
+                                                </div>
+                                            )}
+
                                             <div className="rounded-lg overflow-hidden border shadow-sm">
                                                 <SyntaxHighlighter
                                                     language="json"
                                                     style={vscDarkPlus}
                                                     customStyle={{ margin: 0, padding: '16px', fontSize: '12px' }}
                                                 >
-                                                    {JSON.stringify(scenario.result.request_payload, null, 2)}
+                                                    {JSON.stringify(scenario.result.request.payload, null, 2)}
                                                 </SyntaxHighlighter>
                                             </div>
                                         </div>
 
                                         {/* Response */}
                                         <div className="space-y-2">
-                                            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border-l-4 border-green-500 rounded">
+                                            <div className="flex items-center justify-between px-3 py-1.5 bg-green-500/10 border-l-4 border-green-500 rounded">
                                                 <span className="text-sm font-semibold text-green-600">Response</span>
                                             </div>
+
+                                            {/* Response Headers */}
+                                            {scenario.result.response.headers && (
+                                                <div className="bg-muted/50 p-3 rounded-lg border border-dashed">
+                                                    <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Headers</div>
+                                                    <pre className="text-xs font-mono whitespace-pre-wrap">{scenario.result.response.headers}</pre>
+                                                </div>
+                                            )}
+
                                             <div className="rounded-lg overflow-hidden border shadow-sm">
                                                 <SyntaxHighlighter
                                                     language="json"
                                                     style={vscDarkPlus}
                                                     customStyle={{ margin: 0, padding: '16px', fontSize: '12px' }}
                                                 >
-                                                    {JSON.stringify(scenario.result.response_payload, null, 2)}
+                                                    {JSON.stringify(scenario.result.response.payload, null, 2)}
                                                 </SyntaxHighlighter>
                                             </div>
                                         </div>

@@ -23,8 +23,14 @@ interface IntegrationScenario {
     result: {
         scenario: string;
         expected_result: string;
-        request_payload: any;
-        response_payload: any;
+        request: {
+            payload: any;
+            headers: string;
+        };
+        response: {
+            payload: any;
+            headers: string;
+        };
     };
 }
 

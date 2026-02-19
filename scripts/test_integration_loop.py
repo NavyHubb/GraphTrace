@@ -18,17 +18,21 @@ class MockDBClient:
                     "endpoint": "/api/test",
                     "http_method": "POST",
                     "endpoint_method_name": "testMethod",
-                    "path": MagicMock(nodes=[MagicMock(labels=["METHOD"], get=lambda x: "testSignature" if x=="signature" else ("testName" if x=="name" else None))]),
+                    "path": MagicMock(nodes=[MagicMock(labels=["METHOD"], get=lambda x: "testSignature" if x=="signature" else ("testName" if x=="name" else ("ResponseEntity<TestResDTO>" if x=="returnType" else None)))]),
                     "source_methods": ["test_id"]
                 }
             ]
-        elif "HAS_PARAMETER" in query_str:
-            # _collect_dto_info
+        elif "HAS_PARAMETER" in query_str or "RETURNS" in query_str:
+            # _collect_dto_info 및 retriever_node의 param_query 대응
             return [
                 {
-                    "type_name": "TestDTO",
-                    "field_name": "id",
-                    "field_type": "Long"
+                    "type_name": "TestReqDTO",
+                    "pt_name": "TestReqDTO",
+                    "pf_name": "id",
+                    "pf_type": "Long",
+                    "rt_name": "TestResDTO",
+                    "rf_name": "status",
+                    "rf_type": "String"
                 }
             ]
         return []
@@ -37,7 +41,7 @@ class MockDBClient:
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.agent.integration_agent import IntegrationAgent, ScenarioOutput, ValidatorOutput
+from core.agent.integration_agent import IntegrationAgent, ScenarioOutput, ValidatorOutput, RequestDetail, ResponseDetail
 
 def test_loop_logic():
     logging.basicConfig(level=logging.INFO)
@@ -48,8 +52,8 @@ def test_loop_logic():
     mock_scenario = ScenarioOutput(
         scenario="Test Scenario",
         expected_result="| Case | Status |",
-        request_payload='{"id": 1}',
-        response_payload='{"status": "ok"}'
+        request=RequestDetail(payload='{"id": 1}', headers="Content-Type: application/json"),
+        response=ResponseDetail(payload='{"status": "ok"}', headers="token: mock_token")
     )
     
     mock_validator_fail = ValidatorOutput(
@@ -83,6 +87,17 @@ def test_loop_logic():
     assert result['iterations'] == 2
     assert len(result['validation_results']) >= 1
     assert result['validation_results'][-1]['is_valid'] == True
+    
+    # 생성된 시나리오의 필드 확인
+    if result['scenarios']:
+        first_scenario = result['scenarios'][0]['result']
+        print(f"Generated top-level fields: {list(first_scenario.keys())}")
+        if 'request' in first_scenario:
+            print(f"Request fields: {list(first_scenario['request'].keys())}")
+        if 'response' in first_scenario:
+            print(f"Response fields: {list(first_scenario['response'].keys())}")
+            print(f"Response Headers: {first_scenario['response']['headers']}")
+            
     print("Loop logic test passed!")
 
 def test_max_iterations():
@@ -92,8 +107,8 @@ def test_max_iterations():
     mock_scenario = ScenarioOutput(
         scenario="Test Scenario",
         expected_result="| Case | Status |",
-        request_payload='{"id": 1}',
-        response_payload='{"status": "ok"}'
+        request=RequestDetail(payload='{"id": 1}', headers="Content-Type: application/json"),
+        response=ResponseDetail(payload='{"status": "ok"}', headers="token: mock_token")
     )
     
     mock_validator_fail = ValidatorOutput(
