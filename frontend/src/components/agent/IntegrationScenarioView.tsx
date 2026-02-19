@@ -63,7 +63,7 @@ export function IntegrationScenarioView() {
                                     <div className="space-y-1">
                                         <div className="font-mono text-sm font-bold">{scenario.endpoint}</div>
                                         <div className="text-xs text-muted-foreground line-clamp-1">
-                                            원인 메서드: {scenario.trigger_methods.join(", ")}
+                                            원인 메서드: {scenario.trigger_methods.map(m => `${m}()`).join(", ")}
                                         </div>
                                     </div>
                                 </div>

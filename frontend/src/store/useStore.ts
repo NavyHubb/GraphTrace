@@ -39,7 +39,7 @@ interface AppState {
     projectNodes: MethodNode[];
     graphData: GraphData;
     selectedNodeId: string | null;
-    selectedNodeDetail: { name: string; signature: string; source: string } | null;
+    selectedNodeDetail: { name: string; signature: string; source: string; type?: string } | null;
     isLoading: boolean;
     error: string | null;
 

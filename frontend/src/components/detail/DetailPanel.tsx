@@ -44,7 +44,9 @@ export function DetailPanel() {
         <div className="h-full flex flex-col bg-background min-h-0 overflow-hidden">
             <div className="p-4 border-b shrink-0 flex items-center justify-between gap-4 bg-muted/5">
                 <div className="min-w-0 flex-1">
-                    <h2 className="font-semibold text-lg truncate">{selectedNodeDetail.name}</h2>
+                    <h2 className="font-semibold text-lg truncate">
+                        {selectedNodeDetail.name}{selectedNodeDetail.type === 'METHOD' ? '()' : ''}
+                    </h2>
                     {selectedNodeDetail.signature && (
                         <code className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded mt-1 block truncate">
                             {selectedNodeDetail.signature}

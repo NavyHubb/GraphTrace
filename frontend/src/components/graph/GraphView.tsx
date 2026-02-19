@@ -75,7 +75,7 @@ function InnerGraphView() { // Renamed from GraphView
             const rfNodes: Node[] = graphData.nodes.map(n => ({
                 id: n.id,
                 data: {
-                    label: (n as any).name,
+                    label: (n as any).type === 'METHOD' ? `${(n as any).name}()` : (n as any).name,
                     type: (n as any).type // Store type in data so we can access it later
                 },
                 position: { x: 0, y: 0 },
