@@ -103,7 +103,16 @@ class IntegrationAgent:
         for ep in impact_groups:
             impact_groups[ep]["source_methods"] = list(impact_groups[ep]["source_methods"])
 
-        return {"impact_groups": impact_groups, "next_step": "retriever"}
+        # LangGraph Studio 등에서 초기 상태 없이 실행될 경우를 대비한 필드 초기화
+        return {
+            "impact_groups": impact_groups, 
+            "next_step": "retriever",
+            "iterations": state.get("iterations", 0),
+            "max_iterations": state.get("max_iterations", 3),
+            "validation_results": state.get("validation_results", []),
+            "scenarios": state.get("scenarios", []),
+            "errors": state.get("errors", [])
+        }
 
     def retriever_node(self, state: IntegrationState):
         """각 엔드포인트 그룹별 컨텍스트를 수집합니다."""
