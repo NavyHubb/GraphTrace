@@ -45,6 +45,7 @@ interface AppState {
 
     // Agent State
     integrationScenarios: IntegrationScenario[];
+    scenarioCache: Record<string, IntegrationScenario[]>;
     isAgentRunning: boolean;
 
     // Actions
@@ -81,6 +82,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Agent State
     integrationScenarios: [],
+    scenarioCache: {},
     isAgentRunning: false,
 
     // Project Management
@@ -126,7 +128,12 @@ export const useStore = create<AppState>((set, get) => ({
     },
 
     fetchUpstreamGraph: async (nodeId) => {
-        set({ isLoading: true, error: null, selectedNodeId: nodeId });
+        set((state) => ({ 
+            isLoading: true, 
+            error: null, 
+            selectedNodeId: nodeId, 
+            integrationScenarios: state.scenarioCache[nodeId] || [] 
+        }));
         try {
             const res = await fetch(`${API_BASE}/graph/upstream/${nodeId}`);
             if (!res.ok) throw new Error('Failed to fetch upstream graph');
@@ -146,7 +153,12 @@ export const useStore = create<AppState>((set, get) => ({
     },
 
     fetchDownstreamGraph: async (nodeId) => {
-        set({ isLoading: true, error: null, selectedNodeId: nodeId });
+        set((state) => ({ 
+            isLoading: true, 
+            error: null, 
+            selectedNodeId: nodeId, 
+            integrationScenarios: state.scenarioCache[nodeId] || [] 
+        }));
         try {
             const res = await fetch(`${API_BASE}/graph/downstream/${nodeId}`);
             if (!res.ok) throw new Error('Failed to fetch downstream graph');
@@ -181,7 +193,13 @@ export const useStore = create<AppState>((set, get) => ({
             const res = await fetch(`${API_BASE}/agent/integration-scenario/${methodId}`);
             if (!res.ok) throw new Error('Failed to generate integration scenario');
             const data = await res.json();
-            set({ integrationScenarios: data.scenarios });
+            set((state) => ({ 
+                integrationScenarios: data.scenarios,
+                scenarioCache: {
+                    ...state.scenarioCache,
+                    [methodId]: data.scenarios
+                }
+            }));
         } catch (err: any) {
             set({ error: err.message });
         } finally {
@@ -203,7 +221,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
     },
 
-    clearScenarios: () => set({ integrationScenarios: [] }),
+    clearScenarios: () => set({ integrationScenarios: [], scenarioCache: {} }),
 
     uploadFiles: async (files) => {
         set({ isLoading: true, error: null, uploadSuccess: false });
