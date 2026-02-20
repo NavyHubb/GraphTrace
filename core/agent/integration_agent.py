@@ -265,7 +265,10 @@ class IntegrationAgent:
                 # Request Payload JSON 파싱 시도
                 request_payload_obj = {}
                 try:
-                    request_payload_obj = json.loads(result.request.payload)
+                    if not result.request.payload.strip():
+                        request_payload_obj = {}
+                    else:
+                        request_payload_obj = json.loads(result.request.payload)
                 except Exception:
                     logger.warning(f"Failed to parse request_payload for {endpoint}, using raw string.")
                     request_payload_obj = {"raw": result.request.payload}
@@ -273,7 +276,10 @@ class IntegrationAgent:
                 # Response Payload JSON 파싱 시도
                 response_payload_obj = {}
                 try:
-                    response_payload_obj = json.loads(result.response.payload)
+                    if not result.response.payload.strip():
+                        response_payload_obj = {}
+                    else:
+                        response_payload_obj = json.loads(result.response.payload)
                 except Exception:
                     logger.warning(f"Failed to parse response_payload for {endpoint}, using raw string.")
                     response_payload_obj = {"raw": result.response.payload}
