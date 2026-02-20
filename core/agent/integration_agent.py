@@ -58,22 +58,6 @@ class IntegrationAgent:
         self.validator_llm = self.llm.with_structured_output(ValidatorOutput)
         self.graph = self._build_graph()
 
-    def _build_graph(self):
-        workflow = StateGraph(IntegrationState)
-
-        # 노드 추가
-        workflow.add_node("planner", self.planner_node)
-        workflow.add_node("retriever", self.retriever_node)
-        workflow.add_node("generator", self.generator_node)
-
-        # 엣지 정의 (흐름)
-        workflow.set_entry_point("planner")
-        workflow.add_edge("planner", "retriever")
-        workflow.add_edge("retriever", "generator")
-        workflow.add_edge("generator", END)
-
-        return workflow.compile()
-
     def planner_node(self, state: IntegrationState):
         """변경된 메서드들로부터 영향받는 엔드포인트를 그룹화합니다."""
         logger.info(f"Planning for source methods: {state['source_method_ids']}")
@@ -145,7 +129,7 @@ class IntegrationAgent:
                             # ResponseEntity<LoginResDto> -> LoginResDto
                             actual_dto = ret_type.split('<')[1].split('>')[0]
                             public_dto_names.add(actual_dto)
-                        except:
+                        except Exception:
                             public_dto_names.add(ret_type)
                     elif ret_type and ret_type != "void":
                         public_dto_names.add(ret_type)
@@ -282,7 +266,7 @@ class IntegrationAgent:
                 request_payload_obj = {}
                 try:
                     request_payload_obj = json.loads(result.request.payload)
-                except:
+                except Exception:
                     logger.warning(f"Failed to parse request_payload for {endpoint}, using raw string.")
                     request_payload_obj = {"raw": result.request.payload}
 
@@ -290,7 +274,7 @@ class IntegrationAgent:
                 response_payload_obj = {}
                 try:
                     response_payload_obj = json.loads(result.response.payload)
-                except:
+                except Exception:
                     logger.warning(f"Failed to parse response_payload for {endpoint}, using raw string.")
                     response_payload_obj = {"raw": result.response.payload}
 
