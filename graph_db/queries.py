@@ -91,6 +91,15 @@ class CypherQueries:
     LIMIT 100
     """
     
+    # [하위 1-Depth 호출 조회]
+    # 특정 메서드($method_id)가 직접 호출하는(1-depth) 하위 메서드 정보만 조회합니다.
+    # LLM 시나리오 생성 시 하위 메서드의 예외 발생(Throw) 로직 등을 파악할 수 있도록 문맥을 제공하기 위해 사용됩니다.
+    GET_1_DEPTH_DOWNSTREAM_METHODS = """
+    MATCH (source:METHOD)-[:CALLS*1..1]->(target:METHOD)
+    WHERE (elementId(source) = $method_id OR source.id = $method_id)
+    RETURN target.name as name, target.signature as signature, target.source as source, target.returnType as returnType
+    """
+    
     # --- Change Detection Helpers ---
     
     # [파일 해시 조회]

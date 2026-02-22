@@ -156,6 +156,25 @@ class IntegrationAgent:
                             processed_signatures.add(sig)
                             self._collect_dto_info(sig, all_dtos)
             
+            # [추가] 변경된 원인 메서드들(trigger_methods)의 1-depth 하위 메서드 수집
+            for m_id in group["source_methods"]:
+                downstream_res = self.db_client.execute_query(
+                    CypherQueries.GET_1_DEPTH_DOWNSTREAM_METHODS,
+                    {"method_id": m_id}
+                )
+                for row in downstream_res:
+                    sig = row["signature"]
+                    # 이미 경로에 포함되어 있거나 처리된 경우 제외
+                    if sig and sig not in processed_signatures:
+                        methods_context.append({
+                            "name": row["name"],
+                            "signature": sig,
+                            "source": row["source"],
+                            "returnType": row["returnType"]
+                        })
+                        processed_signatures.add(sig)
+                        self._collect_dto_info(sig, all_dtos)
+            
             # DTO 분류 (Public vs Internal)
             public_dtos = {}
             internal_dtos = {}
@@ -243,12 +262,12 @@ class IntegrationAgent:
    ### 💡 주요 검증 포인트
    - [ ] [검증 포인트 1]
    - [ ] [검증 포인트 2]
-   - [ ] [예외 상황 검증 항목]
+   - [ ] [예외 상황 검증 항목] (예외나 에러 타입 명칭은 반드시 **볼드체**로 표기해 주세요. 단순하게 'CustomException'이나 'Exception'이라고만 적지 말고, 포함된 구체적인 에러 코드나 메시지 등을 원본 코드에 명시된 그대로 작성해 주세요. 예: **IllegalArgumentException**, **CustomException(ErrorCode.USER_NOT_FOUND)**)
 
 3. `expected_result` 필드 ("기대 결과 표"):
    - 이 필드는 반드시 **마크다운 표(Markdown Table)** 형식으로 작성해야 합니다.
    - 표 컬럼 예시: `| 구분 | 상태 코드 | 검증 항목 | 비고 |`
-   - 성공 케이스와 다양한 실패 케이스(예외 상황)를 표에 모두 포함해 주세요.
+   - 성공 케이스와 다양한 실패 케이스(예외 상황)를 표에 모두 포함해 주세요. (예외 발생 시 해당 에러 타입은 **볼드체**로 작성하되, 포괄적인 예외 클래스명만 쓰지 말고 상세 에러 코드, 상태 등을 구체적으로 명시해 주세요)
 4. `request` 객체:
    - `payload`: 엔드포인트로 전송할 샘플 Request JSON을 문자열로 작성해 주세요. **중요**: `[Public API DTO 구조]`에 정의된 모든 필드를 누락 없이 포함해야 합니다.
    - `headers`: **제공된 [비즈니스 로직 문맥] 코드에서 명시적으로 확인되는 헤더**만 작성해 주세요 (예: `@RequestHeader`, `HttpServletRequest.getHeader()` 등으로 추출되는 값).
