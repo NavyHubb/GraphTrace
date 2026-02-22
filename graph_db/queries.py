@@ -77,7 +77,7 @@ class CypherQueries:
     MATCH (target:METHOD) WHERE elementId(target) = $method_id OR target.id = $method_id
     MATCH (source:METHOD) WHERE source.endpoint IS NOT NULL
     MATCH path = shortestPath((source)-[:CALLS*0..]->(target))
-    RETURN path, source.endpoint as endpoint, source.http_method as http_method, source.name as endpoint_method_name
+    RETURN path, source.endpoint as endpoint, source.http_method as http_method, source.name as endpoint_method_name, target.name as target_name, target.signature as target_signature
     """
 
     # [하위 호출 흐름 조회]

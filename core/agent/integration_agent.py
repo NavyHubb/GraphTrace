@@ -82,11 +82,28 @@ class IntegrationAgent:
                         "http_method": row["http_method"],
                         "name": row["endpoint_method_name"],
                         "paths": [],
-                        "source_methods": set()
+                        "source_methods": set(),
+                        "source_method_names": set()
                     }
                 
                 impact_groups[endpoint]["paths"].append(row["path"])
                 impact_groups[endpoint]["source_methods"].add(m_id) # 원인 메서드 추적
+                
+                # 시그니처나 이름을 통해 읽기 쉬운 메서드 이름 파싱
+                sig = row.get("target_signature")
+                name = row.get("target_name")
+                if sig:
+                    sig_parts = sig.split('(')
+                    if len(sig_parts) > 1:
+                        class_method = sig_parts[0].split('.')[-2:]
+                        display_name = '.'.join(class_method)
+                    else:
+                        display_name = sig.split('.')[-1]
+                    impact_groups[endpoint]["source_method_names"].add(display_name)
+                elif name:
+                    impact_groups[endpoint]["source_method_names"].add(name)
+                else:
+                    impact_groups[endpoint]["source_method_names"].add(m_id)
             
         if not impact_groups:
             return {"errors": ["No reachable endpoints found from changes."], "next_step": END}
@@ -94,6 +111,8 @@ class IntegrationAgent:
         # set을 list로 변환 (JSON 직렬화 및 상태 관리를 위해)
         for ep in impact_groups:
             impact_groups[ep]["source_methods"] = list(impact_groups[ep]["source_methods"])
+            if "source_method_names" in impact_groups[ep]:
+                impact_groups[ep]["source_method_names"] = list(impact_groups[ep]["source_method_names"])
 
         # LangGraph Studio 등에서 초기 상태 없이 실행될 경우를 대비한 필드 초기화
         return {
@@ -191,6 +210,7 @@ class IntegrationAgent:
                 "public_dtos": public_dtos,
                 "internal_dtos": internal_dtos,
                 "trigger_methods": group["source_methods"],
+                "trigger_method_names": group.get("source_method_names", []),
                 "public_dto_names": list(public_dto_names)
             }
             
@@ -210,7 +230,9 @@ class IntegrationAgent:
             group = state["impact_groups"][endpoint]
             
             # 원인 메서드 이름들을 가져와서 프롬프트에 포함 (추적성 확보)
-            trigger_names = [m.split('.')[-1] for m in context['trigger_methods']] # 간단히 클래스명 제외 이름만
+            trigger_names = context.get('trigger_method_names', [])
+            if not trigger_names:
+                trigger_names = [m.split('.')[-1] for m in context['trigger_methods']] # fallback
             
             # 이전 피드백이 있는 경우 프롬프트에 추가
             feedback_str = ""
@@ -306,7 +328,7 @@ class IntegrationAgent:
                 scenarios.append({
                     "endpoint": endpoint,
                     "http_method": group['http_method'],
-                    "trigger_methods": context['trigger_methods'],
+                    "trigger_methods": trigger_names,
                     "result": {
                         "scenario": result.scenario,
                         "expected_result": result.expected_result,
@@ -338,7 +360,9 @@ class IntegrationAgent:
         for scenario_data in state["scenarios"]:
             endpoint = scenario_data["endpoint"]
             context = state["contexts"].get(endpoint, {})
-            trigger_names = [m.split('.')[-1] for m in context.get('trigger_methods', [])]
+            trigger_names = context.get('trigger_method_names', [])
+            if not trigger_names:
+                trigger_names = [m.split('.')[-1] for m in context.get('trigger_methods', [])]
             
             prompt = f"""
 다음 생성된 테스트 시나리오를 검토하고 피드백을 주세요.
