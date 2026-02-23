@@ -46,7 +46,6 @@ venv.bak/
 # App specific
 brain/
 logs/
-/docs/
 *.zip
 
 # Frontend
