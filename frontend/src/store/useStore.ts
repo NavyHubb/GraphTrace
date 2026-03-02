@@ -34,6 +34,15 @@ interface IntegrationScenario {
     };
 }
 
+interface HappyCaseScenario {
+    test_case_id: string;
+    test_case: string;
+    input_data: string;
+    expected_result: string;
+    endpoint: string;
+    http_method: string;
+}
+
 interface AppState {
     // Data
     projectNodes: MethodNode[];
@@ -45,6 +54,7 @@ interface AppState {
 
     // Agent State
     integrationScenarios: IntegrationScenario[];
+    happyCaseScenarios: HappyCaseScenario[];
     scenarioCache: Record<string, IntegrationScenario[]>;
     isAgentRunning: boolean;
 
@@ -59,6 +69,7 @@ interface AppState {
     // Agent Actions
     generateIntegrationScenario: (methodId: string) => Promise<void>;
     generateBatchIntegrationScenarios: () => Promise<void>;
+    generateHappyCaseScenarios: () => Promise<void>;
     clearScenarios: () => void;
 
     projects: string[];
@@ -82,6 +93,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Agent State
     integrationScenarios: [],
+    happyCaseScenarios: [],
     scenarioCache: {},
     isAgentRunning: false,
 
@@ -208,7 +220,7 @@ export const useStore = create<AppState>((set, get) => ({
     },
 
     generateBatchIntegrationScenarios: async () => {
-        set({ isAgentRunning: true, error: null, integrationScenarios: [] });
+        set({ isAgentRunning: true, error: null, integrationScenarios: [], happyCaseScenarios: [] });
         try {
             const res = await fetch(`${API_BASE}/agent/integration-scenario/batch/all`);
             if (!res.ok) throw new Error('Failed to generate batch scenarios');
@@ -221,7 +233,21 @@ export const useStore = create<AppState>((set, get) => ({
         }
     },
 
-    clearScenarios: () => set({ integrationScenarios: [], scenarioCache: {} }),
+    generateHappyCaseScenarios: async () => {
+        set({ isAgentRunning: true, error: null, happyCaseScenarios: [], integrationScenarios: [] });
+        try {
+            const res = await fetch(`${API_BASE}/agent/happy-case/batch`);
+            if (!res.ok) throw new Error('Failed to generate happy-case scenarios');
+            const data = await res.json();
+            set({ happyCaseScenarios: data.scenarios });
+        } catch (err: any) {
+            set({ error: err.message });
+        } finally {
+            set({ isAgentRunning: false });
+        }
+    },
+
+    clearScenarios: () => set({ integrationScenarios: [], happyCaseScenarios: [], scenarioCache: {} }),
 
     uploadFiles: async (files) => {
         set({ isLoading: true, error: null, uploadSuccess: false });

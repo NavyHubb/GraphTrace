@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from core.agent.scenario_agent import ScenarioAgent
 from core.agent.integration_agent import IntegrationAgent
+from core.agent.happy_case_agent import HappyCaseAgent
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -84,4 +85,41 @@ async def get_batch_integration_test_scenarios(request: Request):
         import traceback
         traceback.print_exc()
         logger.error(f"Error in batch generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/happy-case/batch")
+async def get_happy_case_scenarios(request: Request):
+    """
+    프로젝트 내 모든 변경(MODIFIED)된 메서드들을 취합하여 Happy Case(200 OK) 시나리오를 일괄 생성합니다.
+    """
+    analyzer = getattr(request.app.state, "analyzer", None)
+    if not analyzer:
+        raise HTTPException(status_code=503, detail="Analysis Agent not initialized")
+
+    try:
+        # 1. 변경된 메서드들 찾기
+        query = "MATCH (m:METHOD) WHERE m.status = 'MODIFIED' RETURN elementId(m) as id"
+        records = analyzer.connector.execute_query(query)
+        method_ids = [r["id"] for r in records]
+
+        if not method_ids:
+            return {"message": "No modified methods found.", "scenarios": []}
+
+        # 2. HappyCaseAgent 실행
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Generating happy-case scenarios for {len(method_ids)} methods...")
+        
+        agent = HappyCaseAgent(analyzer.connector)
+        result = agent.run(method_ids)
+        
+        return {
+            "source_method_count": len(method_ids),
+            "scenarios": result.get("scenarios", []),
+            "errors": result.get("errors", [])
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"Error in happy-case generation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
