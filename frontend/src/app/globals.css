@@ -151,3 +151,12 @@
 .scenario-table tr:hover {
   background-color: hsl(var(--muted) / 0.5);
 }
+@keyframes progress-loop {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-progress-loop {
+  animation: progress-loop 2s infinite ease-in-out;
+  width: 100%;
+}

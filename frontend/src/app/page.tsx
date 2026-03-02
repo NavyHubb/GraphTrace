@@ -16,6 +16,7 @@ import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { SuccessDialog } from "@/components/ui/success-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { HappyCaseTableView } from "@/components/agent/HappyCaseTableView";
+import { LoadingProgress } from "@/components/agent/LoadingProgress";
 import { IntegrationScenarioView } from "@/components/agent/IntegrationScenarioView";
 import { Card } from "@/components/ui/card";
 import { Activity, LayoutDashboard, Share2, TestTube } from "lucide-react";
@@ -31,7 +32,8 @@ export default function Home() {
     viewMode, 
     setViewMode,
     happyCaseScenarios,
-    integrationScenarios
+    integrationScenarios,
+    isAgentRunning
   } = useStore();
 
   return (
@@ -122,7 +124,11 @@ export default function Home() {
                         <p className="text-muted-foreground">생성된 테스트 시나리오 및 케이스 목록입니다.</p>
                     </div>
 
-                    {happyCaseScenarios.length > 0 || integrationScenarios.length > 0 ? (
+                    {isAgentRunning && happyCaseScenarios.length === 0 && integrationScenarios.length === 0 ? (
+                        <Card className="border-2 border-primary/20 shadow-xl overflow-hidden bg-white/50 backdrop-blur-sm">
+                            <LoadingProgress />
+                        </Card>
+                    ) : (happyCaseScenarios.length > 0 || integrationScenarios.length > 0) ? (
                         <div className="space-y-8">
                             {happyCaseScenarios.length > 0 && (
                                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
