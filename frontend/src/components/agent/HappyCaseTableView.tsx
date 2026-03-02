@@ -67,7 +67,7 @@ export function HappyCaseTableView() {
                                                 {scenario.endpoint}
                                             </span>
                                         </div>
-                                        <p className="text-sm font-medium leading-relaxed break-words whitespace-normal">
+                                        <p className="text-xs font-medium leading-relaxed break-words whitespace-normal">
                                             {scenario.test_case}
                                         </p>
                                     </div>
@@ -80,8 +80,15 @@ export function HappyCaseTableView() {
                                             customStyle={{ 
                                                 margin: 0, 
                                                 padding: '12px', 
-                                                fontSize: '11px',
+                                                fontSize: '12px',
+                                                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                                                 textAlign: 'left'
+                                            }}
+                                            codeTagProps={{
+                                                style: {
+                                                    fontSize: '12px',
+                                                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                                                }
                                             }}
                                             wrapLongLines={true}
                                         >
@@ -97,9 +104,16 @@ export function HappyCaseTableView() {
                                             customStyle={{ 
                                                 margin: 0, 
                                                 padding: '12px', 
-                                                fontSize: '11px',
+                                                fontSize: '12px',
+                                                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                                                 backgroundColor: '#f8fafc',
                                                 textAlign: 'left'
+                                            }}
+                                            codeTagProps={{
+                                                style: {
+                                                    fontSize: '12px',
+                                                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                                                }
                                             }}
                                             wrapLongLines={true}
                                         >
