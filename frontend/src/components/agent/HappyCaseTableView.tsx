@@ -13,6 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, FlaskConical } from "lucide-react";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 export function HappyCaseTableView() {
     const { happyCaseScenarios } = useStore();
@@ -22,12 +24,19 @@ export function HappyCaseTableView() {
     }
 
     return (
-        <Card className="shadow-md border-primary/20">
-            <CardHeader className="bg-primary/5 pb-4">
-                <div className="flex items-center gap-2">
-                    <FlaskConical className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-xl">Happy Case 테스트 시나리오 (일괄)</CardTitle>
-                    <Badge variant="outline" className="ml-2 font-mono">
+        <Card className="shadow-md border-primary/20 overflow-hidden py-0 gap-0">
+            <CardHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background p-6 border-b">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                            <FlaskConical className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-xl font-bold tracking-tight">Happy Case 테스트 시나리오</CardTitle>
+                            <p className="text-xs text-muted-foreground mt-1">일괄 생성된 검증용 테스트 데이터셋</p>
+                        </div>
+                    </div>
+                    <Badge variant="secondary" className="px-3 py-1 font-mono">
                         {happyCaseScenarios.length} Cases
                     </Badge>
                 </div>
@@ -48,37 +57,58 @@ export function HappyCaseTableView() {
                                 <TableCell className="font-mono text-xs font-bold text-center align-top pt-4">
                                     <Badge variant="secondary">{scenario.test_case_id}</Badge>
                                 </TableCell>
-                                <TableCell className="align-top pt-4">
-                                    <div className="space-y-2 break-all whitespace-normal">
+                                <TableCell className="align-top pt-4 pb-4">
+                                    <div className="space-y-2 min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant="outline" className={getMethodColor(scenario.http_method)}>
                                                 {scenario.http_method}
                                             </Badge>
-                                            <span className="text-[11px] font-mono text-muted-foreground break-all" title={scenario.endpoint}>
+                                            <span className="text-[11px] font-mono text-muted-foreground break-all">
                                                 {scenario.endpoint}
                                             </span>
                                         </div>
-                                        <p className="text-sm font-medium leading-relaxed">
+                                        <p className="text-sm font-medium leading-relaxed break-words whitespace-normal">
                                             {scenario.test_case}
                                         </p>
                                     </div>
                                 </TableCell>
-                                <TableCell className="align-top">
-                                    <div className="relative group">
-                                        <pre className="text-[11px] font-mono bg-slate-950 text-slate-100 p-3 rounded-md overflow-x-auto max-h-[200px] whitespace-pre-wrap">
+                                <TableCell className="align-top p-3 text-center">
+                                    <div className="rounded-md overflow-hidden border">
+                                        <SyntaxHighlighter
+                                            language="json"
+                                            style={vscDarkPlus}
+                                            customStyle={{ 
+                                                margin: 0, 
+                                                padding: '12px', 
+                                                fontSize: '11px',
+                                                textAlign: 'left'
+                                            }}
+                                            wrapLongLines={true}
+                                        >
                                             {formatJson(scenario.input_data)}
-                                        </pre>
+                                        </SyntaxHighlighter>
                                     </div>
                                 </TableCell>
-                                <TableCell className="align-top text-center">
-                                    <div className="relative group">
-                                        <pre className="text-[11px] font-mono bg-green-950/20 text-green-700 p-3 rounded-md overflow-x-auto max-h-[200px] border border-green-200/50 whitespace-pre-wrap text-left">
+                                <TableCell className="align-top p-3 text-center">
+                                    <div className="rounded-md overflow-hidden border">
+                                        <SyntaxHighlighter
+                                            language="json"
+                                            style={prism}
+                                            customStyle={{ 
+                                                margin: 0, 
+                                                padding: '12px', 
+                                                fontSize: '11px',
+                                                backgroundColor: '#f8fafc',
+                                                textAlign: 'left'
+                                            }}
+                                            wrapLongLines={true}
+                                        >
                                             {formatJson(scenario.expected_result)}
-                                        </pre>
-                                        <div className="mt-2 flex items-center justify-center gap-1 text-[10px] text-green-600 font-bold uppercase">
-                                            <CheckCircle2 className="h-3 w-3" />
-                                            <span>200 OK Expected</span>
-                                        </div>
+                                        </SyntaxHighlighter>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-center gap-1 text-[10px] text-green-600 font-bold uppercase">
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        <span>200 OK Expected</span>
                                     </div>
                                 </TableCell>
                             </TableRow>
@@ -90,13 +120,12 @@ export function HappyCaseTableView() {
     );
 }
 
-function formatJson(data: string) {
+function formatJson(data: any) {
     try {
-        // 만약 이미 객체라면 stringify, 아니라면 parse 시도 후 stringify
         const obj = typeof data === 'string' ? JSON.parse(data) : data;
         return JSON.stringify(obj, null, 2);
     } catch (e) {
-        return data; // JSON이 아니면 그냥 출력
+        return typeof data === 'string' ? data : JSON.stringify(data, null, 2);
     }
 }
 

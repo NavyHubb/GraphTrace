@@ -126,10 +126,6 @@ export default function Home() {
                         <div className="space-y-8">
                             {happyCaseScenarios.length > 0 && (
                                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                                        <Activity className="h-5 w-5 text-emerald-500" />
-                                        Happy Case Scenarios
-                                    </h3>
                                     <HappyCaseTableView />
                                 </div>
                             )}
