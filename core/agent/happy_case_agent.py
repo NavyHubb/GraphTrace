@@ -20,7 +20,6 @@ class HappyCaseState(TypedDict):
 
 class HappyCaseOutput(BaseModel):
     """LLM이 생성할 Happy Case 시나리오 구조 (요구사항 반영)"""
-    test_case_id: str = Field(description="테스트 케이스 ID (예: TC-001)")
     test_case: str = Field(description="테스트하려는 API가 어떤 기능인지 설명 (Happy Case)")
     input_data: str = Field(description="입력 데이터 예시 (JSON 형식 문자열 등)")
     expected_result: str = Field(description="예상 결과 예시 (JSON 형식 문자열 등)")
@@ -153,17 +152,16 @@ class HappyCaseAgent:
 
 [요구사항]
 1. 반드시 200 OK가 발생하는 성공 시나리오만 작성하세요.
-2. `test_case_id`: TC-{tc_count:03d} 형식으로 작성하세요.
-3. `test_case`: "OOO 기능을 보장하기 위해 유효한 데이터를 전송함"과 같이 해당 API의 기능 위주로 한국어로 설명하세요.
-4. `input_data`: API 호출에 필요한 입력 데이터 JSON을 작성하세요.
-5. `expected_result`: 성공 시 예상되는 응답 데이터를 작성하세요. (헤더 정보가 있다면 바디 JSON 위에 명시)
+2. `test_case`: "OOO 기능을 보장하기 위해 유효한 데이터를 전송함"과 같이 해당 API의 기능 위주로 한국어로 설명하세요.
+3. `input_data`: API 호출에 필요한 입력 데이터 JSON을 작성하세요.
+4. `expected_result`: 성공 시 예상되는 응답 데이터를 작성하세요. (헤더 정보가 있다면 바디 JSON 위에 명시)
 """
             try:
                 result = self.structured_llm.invoke(prompt)
                 scenarios.append({
                     "endpoint": endpoint,
                     "http_method": group['http_method'],
-                    "test_case_id": result.test_case_id,
+                    "test_case_id": f"TC-{tc_count:03d}", # LLM 결과 대신 코드에서 직접 부여
                     "test_case": result.test_case,
                     "input_data": result.input_data,
                     "expected_result": result.expected_result
