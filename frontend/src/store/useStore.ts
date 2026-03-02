@@ -57,6 +57,8 @@ interface AppState {
     happyCaseScenarios: HappyCaseScenario[];
     scenarioCache: Record<string, IntegrationScenario[]>;
     isAgentRunning: boolean;
+    selectedMethodIds: string[];
+    viewMode: 'dashboard' | 'graph' | 'results';
 
     // Actions
     fetchProjectNodes: (projectId?: string) => Promise<void>;
@@ -69,8 +71,10 @@ interface AppState {
     // Agent Actions
     generateIntegrationScenario: (methodId: string) => Promise<void>;
     generateBatchIntegrationScenarios: () => Promise<void>;
-    generateHappyCaseScenarios: () => Promise<void>;
+    generateHappyCaseScenarios: (methodIds?: string[]) => Promise<void>;
     clearScenarios: () => void;
+    toggleMethodSelection: (id: string) => void;
+    setViewMode: (mode: 'dashboard' | 'graph' | 'results') => void;
 
     projects: string[];
     selectedProject: string | null;
@@ -96,6 +100,8 @@ export const useStore = create<AppState>((set, get) => ({
     happyCaseScenarios: [],
     scenarioCache: {},
     isAgentRunning: false,
+    selectedMethodIds: [],
+    viewMode: 'dashboard',
 
     // Project Management
     projects: [],
@@ -139,6 +145,17 @@ export const useStore = create<AppState>((set, get) => ({
         }
     },
 
+    toggleMethodSelection: (id: string) => {
+        const stringId = String(id);
+        set((state) => ({
+            selectedMethodIds: state.selectedMethodIds.includes(stringId)
+                ? state.selectedMethodIds.filter(mid => String(mid) !== stringId)
+                : [...state.selectedMethodIds, stringId]
+        }));
+    },
+
+    setViewMode: (mode) => set({ viewMode: mode }),
+
     fetchUpstreamGraph: async (nodeId) => {
         set((state) => ({ 
             isLoading: true, 
@@ -153,7 +170,7 @@ export const useStore = create<AppState>((set, get) => ({
 
             // Auto-layout logic can be added here or in visualizer
             // For now, passing raw data. UI component handles layout (dagre).
-            set({ graphData: data });
+            set({ graphData: data, viewMode: 'graph' });
 
             // Also fetch details
             await get().fetchNodeDetail(nodeId);
@@ -175,7 +192,7 @@ export const useStore = create<AppState>((set, get) => ({
             const res = await fetch(`${API_BASE}/graph/downstream/${nodeId}`);
             if (!res.ok) throw new Error('Failed to fetch downstream graph');
             const data = await res.json();
-            set({ graphData: data });
+            set({ graphData: data, viewMode: 'graph' });
 
             // Also fetch details
             await get().fetchNodeDetail(nodeId);
@@ -233,10 +250,15 @@ export const useStore = create<AppState>((set, get) => ({
         }
     },
 
-    generateHappyCaseScenarios: async () => {
-        set({ isAgentRunning: true, error: null, happyCaseScenarios: [], integrationScenarios: [] });
+    generateHappyCaseScenarios: async (methodIds) => {
+        set({ isAgentRunning: true, error: null, happyCaseScenarios: [], integrationScenarios: [], viewMode: 'results' });
         try {
-            const res = await fetch(`${API_BASE}/agent/happy-case/batch`);
+            const ids = methodIds || get().selectedMethodIds;
+            const url = ids.length > 0
+                ? `${API_BASE}/agent/happy-case/batch?method_ids=${ids.join(',')}`
+                : `${API_BASE}/agent/happy-case/batch`;
+
+            const res = await fetch(url);
             if (!res.ok) throw new Error('Failed to generate happy-case scenarios');
             const data = await res.json();
             set({ happyCaseScenarios: data.scenarios });
